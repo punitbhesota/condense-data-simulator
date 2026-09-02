@@ -7,6 +7,8 @@ import { soilDataSimulatior } from "./utils/soilSensorDataSimulator.js";
 import { creditCardDataSimulator } from "./utils/creditCardDataSimulator.js";
 import "./logger.js";
 
+//hello
+
 if (process.env.DATA_SIMULATOR === "true") {
   console.info("Data Simulator is enabled");
   // Add your data simulation code here
