@@ -9,7 +9,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write: the release step below creates a GitHub Release object.
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -23,14 +24,19 @@ jobs:
             exit 1
           }
 
+          echo "yq: $(command -v yq || echo MISSING) $(yq --version 2>&1 || true)"
+
           # The catalog stores "1.2.3", not "v1.2.3".
           version="${GITHUB_REF_NAME#v}"
+          echo "ref=$GITHUB_REF_NAME version=$version branch=${DEFAULT_BRANCH:-<unset>}"
 
-          image_name=$(yq -r '.containerImageName // ""' condense-library.yml)
+          # No -r: yq v4 unwraps scalars by default and rejects the flag.
+          image_name=$(yq '.containerImageName // ""' condense-library.yml)
           if [ -z "$image_name" ]; then
             echo "::error::containerImageName missing from condense-library.yml"
             exit 1
           fi
+          echo "imageName=$image_name"
 
           # Inject the fields only CI knows: the version from the tag and where
           # the code actually lives. Everything else comes from the manifest.
@@ -44,8 +50,12 @@ jobs:
             {"library": .}
           ' condense-library.yml > payload.json
 
+          echo "--- payload.json ---"
+          cat payload.json
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "imageName=$image_name" >> "$GITHUB_OUTPUT"
+          echo "libraryName=$(yq '.name' condense-library.yml)" >> "$GITHUB_OUTPUT"
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
@@ -75,6 +85,12 @@ jobs:
       - name: Sync catalog
         run: |
           set -euo pipefail
+          if [ -z "${CENTRAL_ADMIN_URL:-}" ]; then
+            echo "::error::CENTRAL_ADMIN_URL secret is not set"
+            exit 1
+          fi
+          echo "target host: $(echo "$CENTRAL_ADMIN_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
+
           response=$(mktemp)
           status=$(curl --silent --show-error \
             --output "$response" --write-out '%{http_code}' \
@@ -94,3 +110,14 @@ jobs:
         env:
           CENTRAL_ADMIN_URL: ${{ secrets.CENTRAL_ADMIN_URL }}
           AUTH_BYPASS_TOKEN: ${{ secrets.AUTH_BYPASS_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Published to the Condense library catalogue as
+            **${{ steps.manifest.outputs.libraryName }}**
+            version `${{ steps.manifest.outputs.version }}`.
+          files: condense-library.yml
