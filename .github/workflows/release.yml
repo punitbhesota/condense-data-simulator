@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read manifest and derive release fields
+        id: manifest
+        run: |
+          set -euo pipefail
+          test -f condense-library.yml || {
+            echo "::error::condense-library.yml missing at repository root"
+            exit 1
+          }
+
+          # The catalog stores "1.2.3", not "v1.2.3".
+          version="${GITHUB_REF_NAME#v}"
+
+          image_name=$(yq -r '.containerImageName // ""' condense-library.yml)
+          if [ -z "$image_name" ]; then
+            echo "::error::containerImageName missing from condense-library.yml"
+            exit 1
+          fi
+
+          # Inject the fields only CI knows: the version from the tag and where
+          # the code actually lives. Everything else comes from the manifest.
+          export VERSION="$version"
+          yq -o=json '
+            .versionNumber = strenv(VERSION) |
+            .repositoryName = strenv(GITHUB_REPOSITORY) |
+            .branchName = strenv(DEFAULT_BRANCH) |
+            .containerImageTag = strenv(VERSION) |
+            .available = (.available // 1) |
+            {"library": .}
+          ' condense-library.yml > payload.json
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "imageName=$image_name" >> "$GITHUB_OUTPUT"
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+      # TEMPORARILY DISABLED — validating the catalogue write on its own.
+      #
+      # These run BEFORE the sync, so a registry problem would block the DB write
+      # we are actually testing. Re-enable both once the sync is proven: until
+      # then the catalogue records an image tag that has not been pushed, so
+      # "Deploy Now" on this version will fail to pull.
+      #
+      # - name: Log in to registry
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ${{ secrets.REGISTRY_NAME }}
+      #     username: ${{ secrets.REGISTRY_USERNAME }}
+      #     password: ${{ secrets.REGISTRY_PASSWORD }}
+      #
+      # - name: Build and push image
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     push: true
+      #     # Image name comes from the manifest, so it cannot drift from the
+      #     # containerImageName the catalog records.
+      #     tags: ${{ secrets.REGISTRY_NAME }}/${{ steps.manifest.outputs.imageName }}:${{ steps.manifest.outputs.version }}
+
+      - name: Sync catalog
+        run: |
+          set -euo pipefail
+          response=$(mktemp)
+          status=$(curl --silent --show-error \
+            --output "$response" --write-out '%{http_code}' \
+            --request POST "$CENTRAL_ADMIN_URL/createLibrary" \
+            --header "Authorization: $AUTH_BYPASS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --header 'ngrok-skip-browser-warning: true' \
+            --data @payload.json)
+
+          cat "$response"
+
+          # 201 = new version created, 200 = this version re-published.
+          if [ "$status" != "201" ] && [ "$status" != "200" ]; then
+            echo "::error::Catalog sync failed with HTTP $status"
+            exit 1
+          fi
+        env:
+          CENTRAL_ADMIN_URL: ${{ secrets.CENTRAL_ADMIN_URL }}
+          AUTH_BYPASS_TOKEN: ${{ secrets.AUTH_BYPASS_TOKEN }}

@@ -1,0 +1,70 @@
+name: Data Simulator
+description: Generates and streams synthetic telemetry data to simulate real-world device behavior at scale
+category: Stream
+type: Input
+code: HTTP
+maintainer: Official
+tags:
+  - Stream
+  - Apache Kafka
+  - Simulator
+  - Testing
+language: JAVASCRIPT
+containerImageName: condense-data-simulator
+iconLink: DataSimulator2.svg
+
+envSchema:
+  - name: title
+    label: Title
+    type: text
+    placeHolder: Enter a Title
+    isRequired: true
+
+  - name: DATA_SIMULATOR
+    label: Enable Simulator
+    type: text
+    isRequired: true
+    value: "true"
+
+  - name: SIMULATOR_TYPE
+    label: Data Simulator Type
+    type: select
+    placeHolder: Select a data simulator type
+    isRequired: true
+    selectList:
+      - INDUSTRIAL_DATA_SIMULATOR
+      - SOIL_SENSOR_DATA_SIMULATOR
+      - TELEMATICS_DATA_SIMULATOR
+      - WEARABLE_SIMULATOR
+      - CREDIT_CARD_SIMULATOR
+
+  - name: INTERVAL_MS
+    label: Time Interval (ms)
+    type: number
+    placeHolder: Enter time interval (ms)
+    isRequired: true
+    description: The time interval in milliseconds between each generated message.
+
+  - name: PUBLISH_TOPIC
+    label: Publish Topic
+    type: topic
+    direction: output
+    placeHolder: Select a Topic
+    isRequired: true
+    description: Topic the generated messages are published to.
+
+  - name: ENABLE_LOGGING
+    label: Enable Logging
+    type: text
+    isRequired: false
+    value: "false"
+    
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+autoscalingConfig:
+  enabled: false
