@@ -7,7 +7,7 @@ import { soilDataSimulatior } from "./utils/soilSensorDataSimulator.js";
 import { creditCardDataSimulator } from "./utils/creditCardDataSimulator.js";
 import "./logger.js";
 
-// this is the latest version
+// this is the latest version new
 
 if (process.env.DATA_SIMULATOR === "true") {
   console.info("Data Simulator is enabled");
